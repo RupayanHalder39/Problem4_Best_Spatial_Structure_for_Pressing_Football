@@ -1,0 +1,15 @@
+metric,value,scope
+detected_press_episodes,19,one 120-second match segment
+team_a_episodes,11,finite-state detector
+team_b_episodes,8,finite-state detector
+features_per_episode,59,episode feature export
+skipped_feature_rows,0,episode feature export
+continuous_signal_frame_coverage_percent,68.2,opp_ballw signal
+cohens_d_press_forming_vs_no_press,0.661,continuous signal audit
+mean_correlation_with_discrete_press_score,0.315,continuous signal audit
+signed_dominance_change_pressing_team,0.109,event-aligned audit
+signed_dominance_change_opponent,0.027,event-aligned audit
+ball_regain_outcomes,2,heuristic attribution
+forced_backward_outcomes,1,heuristic attribution
+uncertain_outcomes,16,heuristic attribution
+counterfactual_delta_psv_proxy,43.4,episode T0-724 bounded local search

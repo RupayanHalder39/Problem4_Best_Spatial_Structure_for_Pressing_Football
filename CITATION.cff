@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "The complete author list is not finalized. Cite the public release metadata once authorship is confirmed."
+title: "Best Spatial Structure for Pressing in Football"
+type: software
+version: 0.1.0-provisional
+date-released: 2026-09-27
+authors:
+  - family-names: Halder
+    given-names: Rupayan
+repository-code: "https://github.com/RupayanHalder39/Problem4_Best_Spatial_Structure_for_Pressing_Football"
+abstract: "Research prototype for measuring football pressing geometry and testing bounded counterfactual defender positions."
+keywords:
+  - football analytics
+  - pressing
+  - spatial geometry
+  - counterfactual analysis
+  - sports analytics

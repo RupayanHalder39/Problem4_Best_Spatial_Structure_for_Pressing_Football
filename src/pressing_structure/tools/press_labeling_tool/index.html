@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Press Labeling Tool</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 20px; background: #14181f; color: #e6e6e6; }
+  h1 { font-size: 18px; }
+  .row { display: flex; gap: 16px; align-items: flex-start; }
+  video { max-width: 640px; background: #000; }
+  .controls { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  button { background: #2a3040; color: #e6e6e6; border: 1px solid #444; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+  button:hover { background: #3a4258; }
+  input, select, textarea { background: #1c2130; color: #e6e6e6; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; }
+  form { background: #1c2130; padding: 14px; border-radius: 6px; width: 380px; }
+  label { display: block; margin-top: 8px; font-size: 12px; color: #aab; }
+  table { border-collapse: collapse; margin-top: 16px; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid #333; padding: 4px 6px; text-align: left; }
+  th { background: #222838; }
+  .frametime { font-variant-numeric: tabular-nums; color: #9cf; }
+  .hint { color: #889; font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>Press Labeling Tool</h1>
+<p class="hint">Load a local dashboard video (the tactical-feed panel, so team colors are visible), mark press start/end,
+fill the episode form, click "Add Episode", repeat. Export CSV/JSON when done. Everything stays local in this browser tab
+— nothing is uploaded. See README.md in this folder for the full protocol.</p>
+
+<div class="row">
+  <div>
+    <input type="file" id="fileInput" accept="video/*">
+    <br><br>
+    <video id="video" controls></video>
+    <div class="controls">
+      <button onclick="step(-1)">&lt; frame</button>
+      <button onclick="togglePlay()">Play/Pause</button>
+      <button onclick="step(1)">frame &gt;</button>
+      <label style="display:inline">FPS <input type="number" id="fps" value="30" style="width:50px"></label>
+      <span class="frametime" id="timeDisplay">t=0.000s frame=0</span>
+    </div>
+    <div class="controls">
+      <button onclick="markStart()">Mark press_start_frame HERE</button>
+      <button onclick="markEnd()">Mark press_end_frame HERE</button>
+    </div>
+    <div class="controls">
+      <span id="markedStart">start: —</span>
+      <span id="markedEnd">end: —</span>
+    </div>
+  </div>
+
+  <form id="episodeForm" onsubmit="addEpisode(event)">
+    <label>press_start_frame <input type="number" id="f_start" required></label>
+    <label>press_end_frame <input type="number" id="f_end" required></label>
+    <label>pressing_team
+      <select id="f_pressing_team"><option value="0">0</option><option value="1">1</option></select>
+    </label>
+    <label>ball_carrier_team
+      <select id="f_carrier_team"><option value="1">1</option><option value="0">0</option></select>
+    </label>
+    <label>pressing_players (comma-separated track_ids, optional)
+      <input type="text" id="f_players" placeholder="e.g. 12,18,23">
+    </label>
+    <label>primary_presser (track_id, optional — leave blank if ambiguous)
+      <input type="text" id="f_primary">
+    </label>
+    <label>outcome
+      <select id="f_outcome">
+        <option>BALL_REGAIN</option>
+        <option>FORCED_BACKWARD</option>
+        <option>FORCED_LATERAL</option>
+        <option>FORCED_LONG_CLEARANCE</option>
+        <option>REDUCED_FORWARD_PROGRESSION</option>
+        <option>FORCED_LOW_VALUE_PASS</option>
+        <option>PRESS_ESCAPED</option>
+        <option>DANGEROUS_FORWARD_PROGRESSION</option>
+        <option>UNCERTAIN</option>
+      </select>
+    </label>
+    <label>confidence
+      <select id="f_confidence"><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select>
+    </label>
+    <label>notes <textarea id="f_notes" rows="2" style="width:100%"></textarea></label>
+    <div class="controls" style="margin-top:10px">
+      <button type="submit">Add Episode</button>
+      <button type="button" onclick="clearForm()">Clear form</button>
+    </div>
+  </form>
+</div>
+
+<div class="controls">
+  <button onclick="exportJSON()">Export JSON</button>
+  <button onclick="exportCSV()">Export CSV</button>
+  <button onclick="deleteLast()">Delete last row</button>
+  <span id="annotatorIdLabel">annotator_id: <input type="text" id="annotatorId" value="annotator_1" style="width:100px"></span>
+</div>
+
+<table id="episodeTable">
+  <thead><tr>
+    <th>#</th><th>press_start_frame</th><th>press_end_frame</th><th>pressing_team</th><th>ball_carrier_team</th>
+    <th>pressing_players</th><th>primary_presser</th><th>support_pressers</th><th>outcome</th><th>confidence</th><th>notes</th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+
+<script>
+const video = document.getElementById('video');
+const episodes = [];
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) video.src = URL.createObjectURL(file);
+});
+
+function fps() { return parseFloat(document.getElementById('fps').value) || 30; }
+function currentFrame() { return Math.round(video.currentTime * fps()); }
+
+function updateTimeDisplay() {
+  document.getElementById('timeDisplay').textContent = `t=${video.currentTime.toFixed(3)}s frame=${currentFrame()}`;
+}
+video.addEventListener('timeupdate', updateTimeDisplay);
+video.addEventListener('loadedmetadata', updateTimeDisplay);
+
+function step(dir) {
+  video.pause();
+  video.currentTime = Math.max(0, video.currentTime + dir / fps());
+}
+function togglePlay() { video.paused ? video.play() : video.pause(); }
+
+let markedStartFrame = null, markedEndFrame = null;
+function markStart() {
+  markedStartFrame = currentFrame();
+  document.getElementById('markedStart').textContent = `start: ${markedStartFrame}`;
+  document.getElementById('f_start').value = markedStartFrame;
+}
+function markEnd() {
+  markedEndFrame = currentFrame();
+  document.getElementById('markedEnd').textContent = `end: ${markedEndFrame}`;
+  document.getElementById('f_end').value = markedEndFrame;
+}
+
+function parseIdList(s) {
+  return s.split(',').map(x => x.trim()).filter(x => x.length > 0).map(Number);
+}
+
+function addEpisode(ev) {
+  ev.preventDefault();
+  const players = parseIdList(document.getElementById('f_players').value);
+  const primaryRaw = document.getElementById('f_primary').value.trim();
+  const primary = primaryRaw === '' ? null : Number(primaryRaw);
+  const support = players.filter(p => p !== primary);
+  const pressingTeam = Number(document.getElementById('f_pressing_team').value);
+  const carrierTeam = Number(document.getElementById('f_carrier_team').value);
+  if (pressingTeam === carrierTeam) {
+    alert('pressing_team and ball_carrier_team must differ — data-entry error.');
+    return;
+  }
+  const startF = Number(document.getElementById('f_start').value);
+  const endF = Number(document.getElementById('f_end').value);
+  if (endF < startF) {
+    alert('press_end_frame must be >= press_start_frame.');
+    return;
+  }
+  const row = {
+    episode_index: episodes.length,
+    annotator_id: document.getElementById('annotatorId').value || 'annotator_1',
+    press_start_frame: startF,
+    press_end_frame: endF,
+    pressing_team: pressingTeam,
+    ball_carrier_team: carrierTeam,
+    pressing_players: players,
+    primary_presser: primary,
+    support_pressers: support,
+    outcome: document.getElementById('f_outcome').value,
+    confidence: document.getElementById('f_confidence').value,
+    notes: document.getElementById('f_notes').value,
+  };
+  episodes.push(row);
+  renderTable();
+  clearForm();
+}
+
+function clearForm() {
+  document.getElementById('f_players').value = '';
+  document.getElementById('f_primary').value = '';
+  document.getElementById('f_notes').value = '';
+  markedStartFrame = markedEndFrame = null;
+  document.getElementById('markedStart').textContent = 'start: —';
+  document.getElementById('markedEnd').textContent = 'end: —';
+}
+
+function deleteLast() {
+  episodes.pop();
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.querySelector('#episodeTable tbody');
+  tbody.innerHTML = '';
+  episodes.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i}</td><td>${r.press_start_frame}</td><td>${r.press_end_frame}</td>
+      <td>${r.pressing_team}</td><td>${r.ball_carrier_team}</td>
+      <td>${r.pressing_players.join(' ')}</td><td>${r.primary_presser ?? ''}</td>
+      <td>${r.support_pressers.join(' ')}</td><td>${r.outcome}</td><td>${r.confidence}</td>
+      <td>${(r.notes || '').replace(/</g, '&lt;')}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function exportJSON() {
+  downloadBlob(JSON.stringify(episodes, null, 2), 'press_labels.json', 'application/json');
+}
+
+function exportCSV() {
+  if (episodes.length === 0) { alert('No episodes to export.'); return; }
+  const cols = ['episode_index', 'annotator_id', 'press_start_frame', 'press_end_frame', 'pressing_team',
+                'ball_carrier_team', 'pressing_players', 'primary_presser', 'support_pressers', 'outcome',
+                'confidence', 'notes'];
+  const lines = [cols.join(',')];
+  for (const r of episodes) {
+    const vals = cols.map(c => {
+      let v = r[c];
+      if (Array.isArray(v)) v = v.join(' ');
+      if (v === null || v === undefined) v = '';
+      v = String(v).replace(/"/g, '""');
+      return /[,"\n]/.test(v) ? `"${v}"` : v;
+    });
+    lines.push(vals.join(','));
+  }
+  downloadBlob(lines.join('\n'), 'press_labels.csv', 'text/csv');
+}
+</script>
+</body>
+</html>
